@@ -550,17 +550,17 @@ def validate(dto_class: Type[BaseRequest]):
 				# Execute the actual function (ini yang bisa error)
 				return func(*args, **kwargs)
 
-			# except frappe.ValidationError:
-			#	  # Re-raise validation errors
-			#	  raise
+			except frappe.ValidationError:
+				# Re-raise validation errors
+				raise
 
-			# except frappe.DoesNotExistError:
-			#	  # Handle not found errors
-			#	  raise
+			except frappe.DoesNotExistError:
+				# Handle not found errors
+				raise
 
-			# except frappe.PermissionError:
-			#	  # Handle permission errors
-			#	  raise
+			except frappe.PermissionError:
+				# Handle permission errors
+				raise
 
 			except Exception as e:
 				# Log unexpected errors from the decorated function
