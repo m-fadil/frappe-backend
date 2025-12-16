@@ -208,6 +208,5 @@ reviews:
       enabled: true
     yamllint:
       enabled: true
-      configuration_file: ".yamllint.conf"
 chat:
   auto_reply: true
