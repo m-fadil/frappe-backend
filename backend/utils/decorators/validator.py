@@ -7,7 +7,7 @@ import threading
 from backend.utils.exceptions import BaseAPIException, InternalServerException
 
 from functools import wraps
-from typing import Type, get_origin, get_args, Union, Any, Dict, Tuple, List
+from typing import get_origin, get_args, Union, Any
 from copy import deepcopy
 
 
@@ -33,7 +33,7 @@ class TypeInspector:
 	"""Handles type introspection and metadata extraction"""
 
 	def __init__(self):
-		self._cache: Dict[Type, Tuple] = {}
+		self._cache: dict[type, tuple] = {}
 		self._lock = threading.RLock() # Thread-safe cache access
 
 	def is_optional(self, field_type) -> bool:
@@ -72,12 +72,12 @@ class TypeInspector:
 
 		return field_type
 
-	def get_type_name(self, target_type: Type) -> str:
+	def get_type_name(self, target_type: type) -> str:
 		"""Get safe type name for error messages"""
 		return getattr(target_type, '__name__',
 					   getattr(target_type, '_name', str(target_type)))
 
-	def get_field_metadata(self, dto_class: Type[BaseRequest]) -> Tuple[List[str], List[str], Dict, Dict]:
+	def get_field_metadata(self, dto_class: type[BaseRequest]) -> tuple[list[str], list[str], dict, dict]:
 		"""
 		Extract and cache field metadata from DTO class (Thread-safe)
 		Returns: (required_fields, optional_fields, type_hints, default_values)
@@ -121,7 +121,7 @@ class TypeInspector:
 
 
 # =================================
-# Type Converter
+# type Converter
 # =================================
 class TypeConverter:
 	"""Handles type conversion with caching and error handling"""
@@ -129,7 +129,7 @@ class TypeConverter:
 	MAX_CACHE_SIZE = 1000 # Prevent unbounded growth
 
 	def __init__(self):
-		self._json_cache: Dict[str, Any] = {}
+		self._json_cache: dict[str, Any] = {}
 		self._type_inspector = TypeInspector()
 		self._lock = threading.RLock() # Thread-safe cache
 
@@ -217,7 +217,7 @@ class TypeConverter:
 			return value
 		return value
 
-	def convert(self, value: Any, target_type: Type) -> Any:
+	def convert(self, value: Any, target_type: type) -> Any:
 		"""Convert value to target type with comprehensive handling"""
 		if value is None:
 			return None
@@ -243,7 +243,7 @@ class TypeConverter:
 		except TypeError:
 			pass
 
-		# Type conversion mapping
+		# type conversion mapping
 		converters = {
 			str: lambda v: str(v),
 			int: self.convert_to_int,
@@ -319,9 +319,9 @@ class RequestValidator:
 
 	def validate_required_fields(
 		self,
-		required_fields: List[str],
+		required_fields: list[str],
 		kwargs: dict
-	) -> Tuple[List[str], Dict[str, str]]:
+	) -> tuple[list[str], dict[str, str]]:
 		"""
 		Validate required fields presence and emptiness
 		Returns: (missing_fields, empty_fields)
@@ -347,7 +347,7 @@ class RequestValidator:
 		self,
 		field: str,
 		value: Any,
-		field_type: Type,
+		field_type: type,
 		has_default: bool
 	) -> Any:
 		"""Process and convert a single field value"""
@@ -359,12 +359,12 @@ class RequestValidator:
 
 	def build_validated_data(
 		self,
-		required_fields: List[str],
-		optional_fields: List[str],
-		type_hints: Dict[str, Type],
-		default_values: Dict[str, Any],
+		required_fields: list[str],
+		optional_fields: list[str],
+		type_hints: dict[str, type],
+		default_values: dict[str, Any],
 		kwargs: dict
-	) -> Tuple[Dict[str, Any], Dict[str, str]]:
+	) -> tuple[dict[str, Any], dict[str, str]]:
 		"""
 		Build validated data dictionary with type conversion
 		Returns: (validated_data, conversion_errors)
@@ -415,8 +415,8 @@ class RequestValidator:
 
 	def create_dto_instance(
 		self,
-		dto_class: Type[BaseRequest],
-		validated_data: Dict[str, Any]
+		dto_class: type[BaseRequest],
+		validated_data: dict[str, Any]
 	) -> BaseRequest:
 		"""Create DTO instance from validated data"""
 		try:
@@ -430,7 +430,7 @@ class RequestValidator:
 
 	def validate_request(
 		self,
-		dto_class: Type[BaseRequest],
+		dto_class: type[BaseRequest],
 		kwargs: dict
 	) -> BaseRequest:
 		"""
@@ -498,12 +498,12 @@ class RequestValidator:
 _validator_instance = RequestValidator()
 
 
-def validate(dto_class: Type[BaseRequest]):
+def validate(dto_class: type[BaseRequest]):
 	"""
 	Decorator untuk validasi dan konversi request parameters
 
 	Features:
-	- Type validation & conversion
+	- type validation & conversion
 	- Required field checking
 	- Default value support
 	- Optional field handling
