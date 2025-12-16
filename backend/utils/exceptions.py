@@ -8,6 +8,15 @@ class BaseAPIException(frappe.ValidationError):
 	_message = "An error occurred"
 
 	def __init__(self, message=None, title=None, errors=None, **kwargs):
+		"""
+		Initialize the API exception and populate frappe.local.response with a standardized HTTP-style error payload.
+		
+		Parameters:
+			message (str): Optional custom detail message; defaults to the class-level `_message`.
+			title (str): Optional custom title; defaults to the class-level `_title`.
+			errors (list): Optional list of error items to include in the response; defaults to an empty list.
+			**kwargs: Additional key/value pairs merged into frappe.local.response alongside standard fields.
+		"""
 		self.message = message or self._message
 		self.title = title or self._title
 		self.errors = errors or []

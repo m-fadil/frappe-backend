@@ -33,11 +33,23 @@ class TypeInspector:
 	"""Handles type introspection and metadata extraction"""
 
 	def __init__(self):
+		"""
+		Initialize the TypeInspector.
+		
+		Sets up an in-memory cache mapping inspected types to their metadata tuples and a reentrant lock to ensure thread-safe access.
+		"""
 		self._cache: dict[type, tuple] = {}
 		self._lock = threading.RLock() # Thread-safe cache access
 
 	def is_optional(self, field_type) -> bool:
-		"""Check if field is Optional (Union with None)"""
+		"""
+		Determine whether a type annotation allows None (i.e., represents Optional[...] or a Union that includes None).
+		
+		Supports both typing.Union[...] and Python 3.10+ X | Y union syntax.
+		
+		Returns:
+		    True if the provided `field_type` includes `None`, False otherwise.
+		"""
 		origin = get_origin(field_type)
 		if origin is None:
 			return False
@@ -56,7 +68,15 @@ class TypeInspector:
 		return False
 
 	def get_actual_type(self, field_type):
-		"""Extract actual type from Optional field (Optional[int] -> int)"""
+		"""
+		Extracts the non-None member type from an Optional or Union annotation.
+		
+		Parameters:
+		    field_type: A type annotation (e.g., typing.Optional[int], typing.Union[int, None], or PEP 604 unions) that may include `None`.
+		
+		Returns:
+		    The underlying non-None type (for example, `int` for `Optional[int]`); if no non-None member exists, returns the original `field_type`.
+		"""
 		origin = get_origin(field_type)
 
 		try:
@@ -73,14 +93,30 @@ class TypeInspector:
 		return field_type
 
 	def get_type_name(self, target_type: type) -> str:
-		"""Get safe type name for error messages"""
+		"""
+		Return a safe, human-readable name for error messages.
+		
+		Returns:
+		    type_name (str): The type's `__name__` if available; otherwise its `_name`; otherwise `str(target_type)`.
+		"""
 		return getattr(target_type, '__name__',
 					   getattr(target_type, '_name', str(target_type)))
 
 	def get_field_metadata(self, dto_class: type[BaseRequest]) -> tuple[list[str], list[str], dict, dict]:
 		"""
-		Extract and cache field metadata from DTO class (Thread-safe)
-		Returns: (required_fields, optional_fields, type_hints, default_values)
+		Collects and returns metadata for a DTO class and caches the result in a thread-safe manner.
+		
+		Inspects the class and its MRO to gather type annotations and default values (child overrides parent). Mutable default values (lists, dicts, sets) are deep-copied to avoid shared state. The resulting metadata is stored in an internal cache and returned.
+		
+		Parameters:
+		    dto_class (type[BaseRequest]): The DTO class to inspect.
+		
+		Returns:
+		    tuple[list[str], list[str], dict, dict]: A tuple (required_fields, optional_fields, type_hints, default_values)
+		        - required_fields: list of field names that must be provided.
+		        - optional_fields: list of field names that either have a default value or are annotated as Optional.
+		        - type_hints: mapping of field names to their annotated types.
+		        - default_values: mapping of field names to their default values (mutable defaults are deep-copied).
 		"""
 		with self._lock:
 			if dto_class in self._cache:
@@ -129,6 +165,14 @@ class TypeConverter:
 	MAX_CACHE_SIZE = 1000 # Prevent unbounded growth
 
 	def __init__(self):
+		"""
+		Initialize the instance with an empty JSON parse cache, a TypeInspector for type metadata, and a reentrant lock for thread-safe access to the cache.
+		
+		Attributes:
+		    _json_cache (dict[str, Any]): Cache mapping JSON hash keys to parsed results.
+		    _type_inspector (TypeInspector): Inspector used to inspect and normalize target types.
+		    _lock (threading.RLock): Reentrant lock protecting concurrent access to the cache and related state.
+		"""
 		self._json_cache: dict[str, Any] = {}
 		self._type_inspector = TypeInspector()
 		self._lock = threading.RLock() # Thread-safe cache
@@ -208,7 +252,15 @@ class TypeConverter:
 			return [value]
 
 	def convert_to_dict(self, value: Any) -> dict|Any:
-		"""Convert value to dict"""
+		"""
+		Normalize a value into a dict when possible.
+		
+		If `value` is a JSON string that parses to an object, returns the parsed dict.
+		If `value` is already a dict, returns it unchanged. Otherwise returns the original `value`.
+		
+		Returns:
+		    dict or Any: A `dict` when conversion succeeded, otherwise the original value.
+		"""
 		if isinstance(value, str):
 			parsed = self.safe_json_parse(value)
 			if isinstance(parsed, dict):
@@ -218,7 +270,19 @@ class TypeConverter:
 		return value
 
 	def convert(self, value: Any, target_type: type) -> Any:
-		"""Convert value to target type with comprehensive handling"""
+		"""
+		Convert a value to the specified Python type, supporting Optional/Union, list/dict targets, and common primitive conversions.
+		
+		Parameters:
+		    value (Any): The input value to convert. If None, this function returns None.
+		    target_type (type): The desired target type or typing construct (e.g., Optional[T], Union[..., None], list, dict, or a builtin like int, float, bool, str).
+		
+		Returns:
+		    Any: The converted value, as an instance of the requested type (or None if the input was None).
+		
+		Raises:
+		    ValueError: If the value cannot be converted to the requested type.
+		"""
 		if value is None:
 			return None
 
@@ -323,8 +387,16 @@ class RequestValidator:
 		kwargs: dict
 	) -> tuple[list[str], dict[str, str]]:
 		"""
-		Validate required fields presence and emptiness
-		Returns: (missing_fields, empty_fields)
+		Validate that each required field is present in kwargs and not empty.
+		
+		Checks presence of the names in required_fields against the provided kwargs. For fields that are present, treats None, the empty string, whitespace-only strings, and empty lists or dicts as empty and records an error message.
+		
+		Parameters:
+			required_fields (list[str]): Field names that must be present and non-empty.
+			kwargs (dict): Mapping of input values to validate.
+		
+		Returns:
+			tuple[list[str], dict[str, str]]: A pair where the first element is a list of required field names that are missing from kwargs, and the second element is a mapping of field names to error messages for fields that are present but considered empty.
 		"""
 		missing_fields = [f for f in required_fields if f not in kwargs]
 
@@ -350,7 +422,18 @@ class RequestValidator:
 		field_type: type,
 		has_default: bool
 	) -> Any:
-		"""Process and convert a single field value"""
+		"""
+		Convert a single field value to its target type, treating an empty string as missing when no default exists.
+		
+		Parameters:
+		    field (str): The field name being processed; used for context but not for conversion.
+		    value (Any): The raw input value to convert.
+		    field_type (type): The target Python type to convert the value into.
+		    has_default (bool): Whether the field has a default value; if False and `value` is an empty string, the function returns `None`.
+		
+		Returns:
+		    Any: The converted value suitable for assignment to the field, or `None` if the value is treated as missing.
+		"""
 		# Fix: Use proper boolean check
 		if not has_default and value == "":
 			return None
@@ -366,8 +449,18 @@ class RequestValidator:
 		kwargs: dict
 	) -> tuple[dict[str, Any], dict[str, str]]:
 		"""
-		Build validated data dictionary with type conversion
-		Returns: (validated_data, conversion_errors)
+		Convert and collect validated field values from kwargs according to DTO field metadata.
+		
+		Parameters:
+			required_fields (list[str]): Names of fields that must be present and converted when provided.
+			optional_fields (list[str]): Names of fields that may be omitted; if provided and not None they are converted, otherwise defaults may be applied.
+			type_hints (dict[str, type]): Expected target types for fields.
+			default_values (dict[str, Any]): Default values for optional fields (deep-copied); applied when an optional field is missing.
+			kwargs (dict): Incoming raw input values to validate and convert.
+		
+		Returns:
+			validated_data (dict[str, Any]): Mapping of field names to converted values for use when creating the DTO.
+			conversion_errors (dict[str, str]): Mapping of field names to error messages for fields that failed conversion or had invalid defaults.
 		"""
 		validated_data = {}
 		conversion_errors = {}
@@ -418,7 +511,16 @@ class RequestValidator:
 		dto_class: type[BaseRequest],
 		validated_data: dict[str, Any]
 	) -> BaseRequest:
-		"""Create DTO instance from validated data"""
+		"""
+		Instantiate the given DTO class using validated_data; if direct construction raises TypeError, create an empty instance and assign validated_data keys as attributes.
+		
+		Parameters:
+		    dto_class (type[BaseRequest]): DTO class to instantiate.
+		    validated_data (dict[str, Any]): Mapping of field names to validated values to pass to the DTO.
+		
+		Returns:
+		    BaseRequest: An instance of dto_class populated with the provided validated data.
+		"""
 		try:
 			return dto_class(**validated_data)
 		except TypeError:
@@ -434,9 +536,17 @@ class RequestValidator:
 		kwargs: dict
 	) -> BaseRequest:
 		"""
-		Main validation method
-		Returns: Validated DTO instance
-		Raises: ValidationError on validation errors
+		Validate incoming request data against the DTO class and return a populated DTO instance.
+		
+		Parameters:
+		    dto_class (type[BaseRequest]): DTO class defining expected fields and types.
+		    kwargs (dict): Incoming request data to validate and convert.
+		
+		Returns:
+		    BaseRequest: An instance of `dto_class` populated with validated and converted values.
+		
+		Raises:
+		    frappe.ValidationError: If required fields are missing, fields are empty, or type conversions fail.
 		"""
 
 		# Clear cache for new request
@@ -500,23 +610,34 @@ _validator_instance = RequestValidator()
 
 def validate(dto_class: type[BaseRequest]):
 	"""
-	Decorator untuk validasi dan konversi request parameters
-
-	Features:
-	- type validation & conversion
-	- Required field checking
-	- Default value support
-	- Optional field handling
-	- Comprehensive error messages
-	- Thread-safe caching
-
-	Usage: @validate(YourDtoClass)
+	Create a decorator that validates and converts incoming request parameters into an instance of the provided DTO class and injects it into the wrapped function.
+	
+	The produced decorator:
+	- Validates required fields, applies defaults, and converts types according to the DTO's type hints.
+	- Injects the validated DTO into the wrapped function using the parameter annotated with the DTO class, or under the name 'body' if none is annotated.
+	- Removes extraneous keyword arguments when the wrapped function does not accept **kwargs.
+	- Returns None immediately when a BaseAPIException is raised by the wrapped function (response assumed already handled).
+	- Logs unexpected exceptions and raises an InternalServerException.
+	
+	Parameters:
+		dto_class (type[BaseRequest]): The DTO class used to validate and convert request data.
+	
+	Returns:
+		A decorator that wraps a function to perform request validation and inject a validated DTO into its keyword arguments.
 	"""
 	# Pre-fetch metadata saat decorator di-apply
 	_validator_instance.type_inspector.get_field_metadata(dto_class)
 
 	def decorator(func):
 		# Cache function signature
+		"""
+		Wraps a function so incoming request data is validated and converted into a DTO instance which is injected into the function's keyword arguments.
+		
+		The wrapper inspects the wrapped function's signature to find a parameter annotated with the DTO class; if found, the validated DTO is assigned to that parameter name, otherwise it is assigned to 'body'. If the wrapped function does not accept arbitrary keyword arguments, only parameters present in its signature are passed through. If a BaseAPIException is raised during handling, the wrapper returns None to allow the response already set by that exception to be used; for any other exception the wrapper logs the error and triggers an InternalServerException.
+		
+		Returns:
+		    callable: A wrapped callable that validates request data into `dto_class`, injects the resulting DTO into the original function's kwargs, and then calls the original function.
+		"""
 		sig = inspect.signature(func)
 		dto_param_name = None
 
@@ -534,6 +655,14 @@ def validate(dto_class: type[BaseRequest]):
 
 		@wraps(func)
 		def wrapper(*args, **kwargs):
+			"""
+			Validate request data into a DTO, inject the validated DTO into the wrapped function's keyword arguments, and invoke the wrapped function.
+			
+			The wrapper validates incoming kwargs into an instance of the specified DTO class and places it into kwargs under the DTO parameter name (if present) or under 'body'. If the wrapped function does not accept arbitrary keyword arguments, extraneous keys are removed before invocation.
+			
+			Returns:
+				The wrapped function's return value, or `None` if a `BaseAPIException` occurred or an internal error prevented successful execution.
+			"""
 			try:
 				# Validate and get DTO instance
 				validated_request = _validator_instance.validate_request(dto_class, kwargs)
