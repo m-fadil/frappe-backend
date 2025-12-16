@@ -4,7 +4,6 @@ language: en
 early_access: true
 enable_free_tier: true
 reviews:
-  enabled: true
   profile: chill
   instructions: >-
     # Code Review Instructions
