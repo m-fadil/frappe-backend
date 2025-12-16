@@ -4,8 +4,8 @@ import frappe
 import hashlib
 import threading
 
-from functools import wraps, lru_cache
-from typing import Type, get_type_hints, get_origin, get_args, Union, Any, Dict, Tuple, List
+from functools import wraps
+from typing import Type, get_origin, get_args, Union, Any, Dict, Tuple, List
 from copy import deepcopy
 
 
@@ -15,19 +15,7 @@ from copy import deepcopy
 class BaseRequest:
     """Base class untuk semua request DTOs"""
 
-    __slots__ = ()  # Subclass harus define __slots__ sendiri untuk memory efficiency
-
     def __init__(self, **kwargs):
-        # Validate that subclass defines __slots__
-        if not hasattr(self.__class__, '__slots__') or self.__class__.__slots__ == ():
-            if self.__class__ != BaseRequest:
-                import warnings
-                warnings.warn(
-                    f"{self.__class__.__name__} should define __slots__ for memory efficiency",
-                    RuntimeWarning,
-                    stacklevel=2
-                )
-
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -536,20 +524,57 @@ def validate(dto_class: Type[BaseRequest]):
                 dto_param_name = param_name
                 break
 
+        # Check if function accepts **kwargs
+        has_var_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in sig.parameters.values()
+        )
+
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Validate and get DTO instance
-            validated_request = _validator_instance.validate_request(dto_class, kwargs)
+            try:
+                # Validate and get DTO instance
+                validated_request = _validator_instance.validate_request(dto_class, kwargs)
 
-            # Inject into function parameters
-            if dto_param_name:
-                kwargs[dto_param_name] = validated_request
-            else:
-                kwargs['body'] = validated_request
+                # Inject into function parameters
+                if dto_param_name:
+                    kwargs[dto_param_name] = validated_request
+                else:
+                    kwargs['body'] = validated_request
 
-            return func(*args, **kwargs)
+				# Clean kwargs if the function does not accept **kwargs
+                if not has_var_kwargs:
+                    # Remove all keys except those in the signature
+                    kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+
+                # Execute the actual function (ini yang bisa error)
+                return func(*args, **kwargs)
+
+            # except frappe.ValidationError:
+            #     # Re-raise validation errors
+            #     raise
+
+            # except frappe.DoesNotExistError:
+            #     # Handle not found errors
+            #     raise
+
+            # except frappe.PermissionError:
+            #     # Handle permission errors
+            #     raise
+
+            except Exception as e:
+                # Log unexpected errors from the decorated function
+                frappe.log_error(
+                    title=f"Error in {func.__name__}",
+                    message=frappe.get_traceback()
+                )
+                frappe.throw(
+                    msg=f"An error occurred: {str(e)}",
+                    exc=frappe.ValidationError
+                )
 
         return wrapper
+
     return decorator
 
 
