@@ -4,6 +4,8 @@ import frappe
 import hashlib
 import threading
 
+from backend.utils.exceptions import BaseAPIException, InternalServerException
+
 from functools import wraps
 from typing import Type, get_origin, get_args, Union, Any, Dict, Tuple, List
 from copy import deepcopy
@@ -547,31 +549,22 @@ def validate(dto_class: Type[BaseRequest]):
 					# Remove all keys except those in the signature
 					kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
 
-				# Execute the actual function (ini yang bisa error)
+				# Execute the actual function
 				return func(*args, **kwargs)
 
-			except frappe.ValidationError:
-				# Re-raise validation errors
-				raise
-
-			except frappe.DoesNotExistError:
-				# Handle not found errors
-				raise
-
-			except frappe.PermissionError:
-				# Handle permission errors
-				raise
+			except BaseAPIException:
+				# Custom exceptions sudah set response di __init__, jangan raise lagi
+				# Return None agar frappe pakai response yang sudah di-set
+				return
 
 			except Exception as e:
-				# Log unexpected errors from the decorated function
+				# Log unexpected errors dan set InternalServerException
 				frappe.log_error(
 					title=f"Error in {func.__name__}",
 					message=frappe.get_traceback()
 				)
-				frappe.throw(
-					msg=f"An error occurred: {str(e)}",
-					exc=frappe.ValidationError
-				)
+				InternalServerException(message=str(e))
+				return
 
 		return wrapper
 
