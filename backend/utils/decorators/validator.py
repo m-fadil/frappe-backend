@@ -8,7 +8,7 @@ from typing import Any, Union, get_args, get_origin
 
 import frappe
 
-from backend.utils.exceptions import BaseAPIException, InternalServerException
+from backend.utils.exceptions import BaseAPIException, InternalServerException, ValidationException
 
 
 # =================================
@@ -433,14 +433,12 @@ class RequestValidator:
 
 		# Fix: Better error message with field names and proper status code
 		if missing_fields:
-			frappe.throw(
-				msg=f"Missing required fields: {', '.join(missing_fields)}", exc=frappe.ValidationError
-			)
+			ValidationException(f"Missing required fields: {', '.join(missing_fields)}")
 
 		if empty_fields:
 			# Format multiple empty fields into readable message
 			error_msgs = [f"{field}: {msg}" for field, msg in empty_fields.items()]
-			frappe.throw(msg="<br>".join(error_msgs), exc=frappe.ValidationError)
+			ValidationException("<br>".join(error_msgs))
 
 		# Build validated data
 		validated_data, conversion_errors = self.build_validated_data(
@@ -450,7 +448,7 @@ class RequestValidator:
 		if conversion_errors:
 			# Format conversion errors into readable message
 			error_msgs = [f"{field}: {msg}" for field, msg in conversion_errors.items()]
-			frappe.throw(msg="<br>".join(error_msgs), exc=frappe.ValidationError)
+			ValidationException("<br>".join(error_msgs))
 
 		# Create and return DTO instance
 		return self.create_dto_instance(dto_class, validated_data)
@@ -519,14 +517,10 @@ def validate(dto_class: type[BaseRequest]):
 				# Return None agar frappe pakai response yang sudah di-set
 				return
 
-			except frappe.ValidationError as e:
-				InternalServerException(message=str(e))
-				return
+			except (SystemExit, KeyboardInterrupt):
+				raise
 
 			except Exception as e:
-				if isinstance(e, (SystemExit, KeyboardInterrupt)):
-					raise
-
 				# Log unexpected errors dan set InternalServerException
 				frappe.log_error(title=f"Error in {func.__name__}", message=frappe.get_traceback())
 				InternalServerException(message=str(e))
