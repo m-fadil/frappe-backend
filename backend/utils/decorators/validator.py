@@ -103,8 +103,7 @@ class TypeInspector:
 							default_value = getattr(cls, field_name)
 							if not callable(default_value) and not field_name.startswith("_"):
 								# Deep copy mutable defaults to avoid shared state
-								# FIX: UP038 - Use | instead of tuple in isinstance
-								if isinstance(default_value, list | dict | set):
+								if isinstance(default_value, (list, dict, set)):
 									defaults[field_name] = deepcopy(default_value)
 								else:
 									defaults[field_name] = default_value
@@ -339,8 +338,7 @@ class RequestValidator:
 					empty_fields[field] = "Cannot be empty"
 				elif isinstance(value, str) and value.strip() == "":
 					empty_fields[field] = "Cannot be empty or whitespace"
-				# FIX: UP038 - Use | instead of tuple in isinstance
-				elif isinstance(value, list | dict) and len(value) == 0:
+				elif isinstance(value, (list, dict)) and len(value) == 0:
 					empty_fields[field] = "Cannot be empty"
 
 		return missing_fields, empty_fields
@@ -526,7 +524,7 @@ def validate(dto_class: type[BaseRequest]):
 				return
 
 			except Exception as e:
-				if isinstance(e, SystemExit | KeyboardInterrupt):
+				if isinstance(e, (SystemExit, KeyboardInterrupt)):
 					raise
 
 				# Log unexpected errors dan set InternalServerException
