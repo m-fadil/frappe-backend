@@ -1,14 +1,14 @@
+import hashlib
 import inspect
 import json
-import frappe
-import hashlib
 import threading
+from copy import deepcopy
+from functools import wraps
+from typing import Any, Union, get_args, get_origin
+
+import frappe
 
 from backend.utils.exceptions import BaseAPIException, InternalServerException
-
-from functools import wraps
-from typing import get_origin, get_args, Union, Any
-from copy import deepcopy
 
 
 # =================================
@@ -22,7 +22,7 @@ class BaseRequest:
 			setattr(self, key, value)
 
 	def __repr__(self):
-		attrs = ', '.join(f"{k}={v!r}" for k, v in self.__dict__.items())
+		attrs = ", ".join(f"{k}={v!r}" for k, v in self.__dict__.items())
 		return f"{self.__class__.__name__}({attrs})"
 
 
@@ -34,7 +34,7 @@ class TypeInspector:
 
 	def __init__(self):
 		self._cache: dict[type, tuple] = {}
-		self._lock = threading.RLock() # Thread-safe cache access
+		self._lock = threading.RLock()  # Thread-safe cache access
 
 	def is_optional(self, field_type) -> bool:
 		"""Check if field is Optional (Union with None)"""
@@ -46,7 +46,8 @@ class TypeInspector:
 		try:
 			# Python 3.10+ has types.UnionType for X | Y syntax
 			import types
-			if origin is Union or (hasattr(types, 'UnionType') and isinstance(field_type, types.UnionType)):
+
+			if origin is Union or (hasattr(types, "UnionType") and isinstance(field_type, types.UnionType)):
 				return type(None) in get_args(field_type)
 		except ImportError:
 			# Fallback for older Python versions
@@ -61,7 +62,10 @@ class TypeInspector:
 
 		try:
 			import types
-			is_union = origin is Union or (hasattr(types, 'UnionType') and isinstance(field_type, types.UnionType))
+
+			is_union = origin is Union or (
+				hasattr(types, "UnionType") and isinstance(field_type, types.UnionType)
+			)
 		except ImportError:
 			is_union = origin is Union
 
@@ -74,8 +78,7 @@ class TypeInspector:
 
 	def get_type_name(self, target_type: type) -> str:
 		"""Get safe type name for error messages"""
-		return getattr(target_type, '__name__',
-					   getattr(target_type, '_name', str(target_type)))
+		return getattr(target_type, "__name__", getattr(target_type, "_name", str(target_type)))
 
 	def get_field_metadata(self, dto_class: type[BaseRequest]) -> tuple[list[str], list[str], dict, dict]:
 		"""
@@ -91,16 +94,17 @@ class TypeInspector:
 
 			# Collect from all classes in MRO (child overrides parent)
 			for cls in reversed(dto_class.__mro__):
-				if hasattr(cls, '__annotations__'):
+				if hasattr(cls, "__annotations__"):
 					type_hints.update(cls.__annotations__)
 
 					# Collect default values with deep copy for mutable types
 					for field_name in cls.__annotations__:
 						if hasattr(cls, field_name):
 							default_value = getattr(cls, field_name)
-							if not callable(default_value) and not field_name.startswith('_'):
+							if not callable(default_value) and not field_name.startswith("_"):
 								# Deep copy mutable defaults to avoid shared state
-								if isinstance(default_value, (list, dict, set)):
+								# FIX: UP038 - Use | instead of tuple in isinstance
+								if isinstance(default_value, list | dict | set):
 									defaults[field_name] = deepcopy(default_value)
 								else:
 									defaults[field_name] = default_value
@@ -126,12 +130,12 @@ class TypeInspector:
 class TypeConverter:
 	"""Handles type conversion with caching and error handling"""
 
-	MAX_CACHE_SIZE = 1000 # Prevent unbounded growth
+	MAX_CACHE_SIZE = 1000  # Prevent unbounded growth
 
 	def __init__(self):
 		self._json_cache: dict[str, Any] = {}
 		self._type_inspector = TypeInspector()
-		self._lock = threading.RLock() # Thread-safe cache
+		self._lock = threading.RLock()  # Thread-safe cache
 
 	def clear_cache(self):
 		"""Clear JSON parsing cache"""
@@ -148,7 +152,7 @@ class TypeConverter:
 			return None
 
 		# Fix: Use hash instead of prefix to avoid collision
-		cache_key = hashlib.md5(value.encode('utf-8')).hexdigest()
+		cache_key = hashlib.md5(value.encode("utf-8")).hexdigest()
 
 		with self._lock:
 			if cache_key in self._json_cache:
@@ -157,7 +161,7 @@ class TypeConverter:
 			# Enforce cache size limit
 			if len(self._json_cache) >= self.MAX_CACHE_SIZE:
 				# Remove oldest 20% of entries (simple FIFO)
-				items_to_remove = list(self._json_cache.keys())[:self.MAX_CACHE_SIZE // 5]
+				items_to_remove = list(self._json_cache.keys())[: self.MAX_CACHE_SIZE // 5]
 				for key in items_to_remove:
 					del self._json_cache[key]
 
@@ -169,18 +173,18 @@ class TypeConverter:
 		except json.JSONDecodeError:
 			return None
 
-	def convert_to_int(self, value: Any) -> int|None:
+	def convert_to_int(self, value: Any) -> int | None:
 		"""Convert value to integer"""
 		if isinstance(value, str):
 			value = value.strip()
 			# Fix: Check for empty string explicitly, not falsy
 			if value == "":
 				return None
-			if '.' in value:
+			if "." in value:
 				return int(float(value))
 		return int(value)
 
-	def convert_to_float(self, value: Any) -> float|None:
+	def convert_to_float(self, value: Any) -> float | None:
 		"""Convert value to float"""
 		if isinstance(value, str):
 			value = value.strip()
@@ -192,7 +196,7 @@ class TypeConverter:
 	def convert_to_bool(self, value: Any) -> bool:
 		"""Convert value to boolean"""
 		if isinstance(value, str):
-			return value.lower() in ('true', '1', 'yes', 'on')
+			return value.lower() in ("true", "1", "yes", "on")
 		return bool(value)
 
 	def convert_to_list(self, value: Any) -> list:
@@ -201,13 +205,13 @@ class TypeConverter:
 			parsed = self.safe_json_parse(value)
 			if isinstance(parsed, list):
 				return parsed
-			return [item.strip() for item in value.split(',') if item.strip()]
+			return [item.strip() for item in value.split(",") if item.strip()]
 		elif isinstance(value, list):
 			return value
 		else:
 			return [value]
 
-	def convert_to_dict(self, value: Any) -> dict|Any:
+	def convert_to_dict(self, value: Any) -> dict | Any:
 		"""Convert value to dict"""
 		if isinstance(value, str):
 			parsed = self.safe_json_parse(value)
@@ -228,12 +232,12 @@ class TypeConverter:
 			args = get_args(target_type)
 			non_none_types = [arg for arg in args if arg is not type(None)]
 			target_type = non_none_types[0] if non_none_types else target_type
-			origin = get_origin(target_type) # Update origin after unwrapping
+			origin = get_origin(target_type)  # Update origin after unwrapping
 
-		# Fix: Check origin types before isinstance to avoid TypeError
-		if origin == list or target_type == list:
+		# FIX: E721 - Use `is` for type comparisons
+		if origin is list or target_type is list:
 			return self.convert_to_list(value)
-		elif origin == dict or target_type == dict:
+		elif origin is dict or target_type is dict:
 			return self.convert_to_dict(value)
 
 		# Early return if already correct type (safe for non-generic types)
@@ -279,10 +283,10 @@ class RequestParser:
 			if isinstance(raw_data, bytes):
 				# Fix: Handle encoding errors gracefully
 				try:
-					raw_data = raw_data.decode('utf-8')
+					raw_data = raw_data.decode("utf-8")
 				except UnicodeDecodeError:
 					# Try alternative encodings
-					for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+					for encoding in ["latin-1", "cp1252", "iso-8859-1"]:
 						try:
 							raw_data = raw_data.decode(encoding)
 							break
@@ -290,14 +294,13 @@ class RequestParser:
 							continue
 					else:
 						# Last resort: ignore errors
-						raw_data = raw_data.decode('utf-8', errors='ignore')
+						raw_data = raw_data.decode("utf-8", errors="ignore")
 
 			data = json.loads(raw_data)
 
 			# Normalize null strings
 			normalized_data = {
-				key: self.converter.normalize_null_string(value)
-				for key, value in data.items()
+				key: self.converter.normalize_null_string(value) for key, value in data.items()
 			}
 			kwargs.update(normalized_data)
 		except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
@@ -318,9 +321,7 @@ class RequestValidator:
 		self.parser = RequestParser(self.converter)
 
 	def validate_required_fields(
-		self,
-		required_fields: list[str],
-		kwargs: dict
+		self, required_fields: list[str], kwargs: dict
 	) -> tuple[list[str], dict[str, str]]:
 		"""
 		Validate required fields presence and emptiness
@@ -338,18 +339,13 @@ class RequestValidator:
 					empty_fields[field] = "Cannot be empty"
 				elif isinstance(value, str) and value.strip() == "":
 					empty_fields[field] = "Cannot be empty or whitespace"
-				elif isinstance(value, (list, dict)) and len(value) == 0:
+				# FIX: UP038 - Use | instead of tuple in isinstance
+				elif isinstance(value, list | dict) and len(value) == 0:
 					empty_fields[field] = "Cannot be empty"
 
 		return missing_fields, empty_fields
 
-	def process_field(
-		self,
-		field: str,
-		value: Any,
-		field_type: type,
-		has_default: bool
-	) -> Any:
+	def process_field(self, field: str, value: Any, field_type: type, has_default: bool) -> Any:
 		"""Process and convert a single field value"""
 		# Fix: Use proper boolean check
 		if not has_default and value == "":
@@ -363,7 +359,7 @@ class RequestValidator:
 		optional_fields: list[str],
 		type_hints: dict[str, type],
 		default_values: dict[str, Any],
-		kwargs: dict
+		kwargs: dict,
 	) -> tuple[dict[str, Any], dict[str, str]]:
 		"""
 		Build validated data dictionary with type conversion
@@ -376,10 +372,7 @@ class RequestValidator:
 		for field in required_fields:
 			if field in kwargs:
 				try:
-					validated_data[field] = self.converter.convert(
-						kwargs[field],
-						type_hints[field]
-					)
+					validated_data[field] = self.converter.convert(kwargs[field], type_hints[field])
 				except ValueError as e:
 					conversion_errors[field] = str(e)
 
@@ -389,12 +382,7 @@ class RequestValidator:
 				try:
 					has_default = field in default_values
 					field_type = self.type_inspector.get_actual_type(type_hints[field])
-					converted = self.process_field(
-						field,
-						kwargs[field],
-						field_type,
-						has_default
-					)
+					converted = self.process_field(field, kwargs[field], field_type, has_default)
 					if converted is not None:
 						validated_data[field] = converted
 				except ValueError as e:
@@ -404,19 +392,15 @@ class RequestValidator:
 			elif field not in kwargs and field in default_values:
 				try:
 					field_type = self.type_inspector.get_actual_type(type_hints[field])
-					validated_data[field] = self.converter.convert(
-						default_values[field],
-						field_type
-					)
+					validated_data[field] = self.converter.convert(default_values[field], field_type)
 				except ValueError as e:
-					conversion_errors[field] = f"Invalid default value: {str(e)}"
+					# FIX: RUF010 - Use !s conversion flag instead of str()
+					conversion_errors[field] = f"Invalid default value: {e!s}"
 
 		return validated_data, conversion_errors
 
 	def create_dto_instance(
-		self,
-		dto_class: type[BaseRequest],
-		validated_data: dict[str, Any]
+		self, dto_class: type[BaseRequest], validated_data: dict[str, Any]
 	) -> BaseRequest:
 		"""Create DTO instance from validated data"""
 		try:
@@ -428,11 +412,7 @@ class RequestValidator:
 				setattr(instance, key, value)
 			return instance
 
-	def validate_request(
-		self,
-		dto_class: type[BaseRequest],
-		kwargs: dict
-	) -> BaseRequest:
+	def validate_request(self, dto_class: type[BaseRequest], kwargs: dict) -> BaseRequest:
 		"""
 		Main validation method
 		Returns: Validated DTO instance
@@ -446,46 +426,33 @@ class RequestValidator:
 		kwargs = self.parser.parse_request_data(kwargs)
 
 		# Get field metadata
-		required_fields, optional_fields, type_hints, default_values = \
-			self.type_inspector.get_field_metadata(dto_class)
+		required_fields, optional_fields, type_hints, default_values = self.type_inspector.get_field_metadata(
+			dto_class
+		)
 
 		# Validate required fields
-		missing_fields, empty_fields = self.validate_required_fields(
-			required_fields,
-			kwargs
-		)
+		missing_fields, empty_fields = self.validate_required_fields(required_fields, kwargs)
 
 		# Fix: Better error message with field names and proper status code
 		if missing_fields:
 			frappe.throw(
-				msg=f"Missing required fields: {', '.join(missing_fields)}",
-				exc=frappe.ValidationError
+				msg=f"Missing required fields: {', '.join(missing_fields)}", exc=frappe.ValidationError
 			)
 
 		if empty_fields:
 			# Format multiple empty fields into readable message
 			error_msgs = [f"{field}: {msg}" for field, msg in empty_fields.items()]
-			frappe.throw(
-				msg="<br>".join(error_msgs),
-				exc=frappe.ValidationError
-			)
+			frappe.throw(msg="<br>".join(error_msgs), exc=frappe.ValidationError)
 
 		# Build validated data
 		validated_data, conversion_errors = self.build_validated_data(
-			required_fields,
-			optional_fields,
-			type_hints,
-			default_values,
-			kwargs
+			required_fields, optional_fields, type_hints, default_values, kwargs
 		)
 
 		if conversion_errors:
 			# Format conversion errors into readable message
 			error_msgs = [f"{field}: {msg}" for field, msg in conversion_errors.items()]
-			frappe.throw(
-				msg="<br>".join(error_msgs),
-				exc=frappe.ValidationError
-			)
+			frappe.throw(msg="<br>".join(error_msgs), exc=frappe.ValidationError)
 
 		# Create and return DTO instance
 		return self.create_dto_instance(dto_class, validated_data)
@@ -527,10 +494,7 @@ def validate(dto_class: type[BaseRequest]):
 				break
 
 		# Check if function accepts **kwargs
-		has_var_kwargs = any(
-			p.kind == inspect.Parameter.VAR_KEYWORD
-			for p in sig.parameters.values()
-		)
+		has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
 		@wraps(func)
 		def wrapper(*args, **kwargs):
@@ -542,7 +506,7 @@ def validate(dto_class: type[BaseRequest]):
 				if dto_param_name:
 					kwargs[dto_param_name] = validated_request
 				else:
-					kwargs['body'] = validated_request
+					kwargs["body"] = validated_request
 
 				# Clean kwargs if the function does not accept **kwargs
 				if not has_var_kwargs:
@@ -559,10 +523,7 @@ def validate(dto_class: type[BaseRequest]):
 
 			except Exception as e:
 				# Log unexpected errors dan set InternalServerException
-				frappe.log_error(
-					title=f"Error in {func.__name__}",
-					message=frappe.get_traceback()
-				)
+				frappe.log_error(title=f"Error in {func.__name__}", message=frappe.get_traceback())
 				InternalServerException(message=str(e))
 				return
 
@@ -574,11 +535,12 @@ def validate(dto_class: type[BaseRequest]):
 # =================================
 # Public API
 # =================================
+# FIX: RUF022 - Sort __all__ in alphabetical order
 __all__ = [
-	'BaseRequest',
-	'TypeInspector',
-	'TypeConverter',
-	'RequestParser',
-	'RequestValidator',
-	'validate',
+	"BaseRequest",
+	"RequestParser",
+	"RequestValidator",
+	"TypeConverter",
+	"TypeInspector",
+	"validate",
 ]
