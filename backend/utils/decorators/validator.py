@@ -521,7 +521,14 @@ def validate(dto_class: type[BaseRequest]):
 				# Return None agar frappe pakai response yang sudah di-set
 				return
 
+			except frappe.ValidationError as e:
+				InternalServerException(message=str(e))
+				return
+
 			except Exception as e:
+				if isinstance(e, SystemExit | KeyboardInterrupt):
+					raise
+
 				# Log unexpected errors dan set InternalServerException
 				frappe.log_error(title=f"Error in {func.__name__}", message=frappe.get_traceback())
 				InternalServerException(message=str(e))
@@ -535,7 +542,6 @@ def validate(dto_class: type[BaseRequest]):
 # =================================
 # Public API
 # =================================
-# FIX: RUF022 - Sort __all__ in alphabetical order
 __all__ = [
 	"BaseRequest",
 	"RequestParser",
