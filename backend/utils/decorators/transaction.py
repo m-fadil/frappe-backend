@@ -10,7 +10,7 @@ def with_transaction(func):
 			frappe.db.begin()
 			result = func(*args, **kwargs)
 
-			if not frappe.flags.in_test:
+			if not frappe.in_test:
 				frappe.db.commit()
 
 			return result
