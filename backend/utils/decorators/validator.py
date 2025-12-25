@@ -319,9 +319,7 @@ class RequestValidator:
 		self.converter = TypeConverter()
 		self.parser = RequestParser(self.converter)
 
-	def validate_required_fields(
-		self, required_fields: list[str], kwargs: dict
-	) -> dict[str, Any]:
+	def validate_required_fields(self, required_fields: list[str], kwargs: dict) -> dict[str, Any]:
 		"""
 		Validate required fields presence and emptiness
 		Returns: errors dict with field: message
@@ -445,12 +443,12 @@ class RequestValidator:
 		# If any errors, raise with errors dict
 		if errors:
 			raise ValidationException(
-				message="Validation errors occurred. Please check the details.",
-				errors=errors
+				message="Validation errors occurred. Please check the details.", errors=errors
 			)
 
 		# Create and return DTO instance
 		return self.create_dto_instance(dto_class, validated_data)
+
 
 # =================================
 # Decorator Factory
