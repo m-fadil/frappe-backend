@@ -54,6 +54,14 @@ ignore = [
 ]
 typing-modules = ["frappe.types.DF"]
 
+[tool.ruff.per-file-ignores]
+# DTO request files intentionally use mutable defaults.
+# Defaults are deep-copied and lifecycle-managed by RequestValidator.
+"backend/**/dto/**/*.py" = ["RUF012"]
+
+# Test files may use mutable defaults for fixtures.
+"backend/tests/**/*.py" = ["RUF012"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "tab"

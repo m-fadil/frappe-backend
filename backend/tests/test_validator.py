@@ -25,7 +25,7 @@ class UpdateProductRequestDTO(BaseRequest):
 	name: str
 	price: float
 	stock: int = 0
-	tags: list[str] = ["tag"]
+	tags: list[str] = []
 
 
 # ============================================
@@ -156,8 +156,8 @@ class TestValidatorDecorator(IntegrationTestCase):
 		self.assertEqual(result["product_id"], 1)
 		self.assertEqual(result["name"], "Laptop")
 		self.assertEqual(result["price"], 999.99)
-		self.assertEqual(result["stock"], 0)
-		self.assertEqual(result["tags"], ["tag"])
+		self.assertEqual(result["stock"], 0)  # use default value
+		self.assertEqual(result["tags"], [])  # use default value
 
 	def test_parse_request_data_from_frappe_request(self):
 		# Simulate raw JSON in frappe.request.data
