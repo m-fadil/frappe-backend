@@ -321,27 +321,28 @@ class RequestValidator:
 
 	def validate_required_fields(
 		self, required_fields: list[str], kwargs: dict
-	) -> tuple[list[str], dict[str, str]]:
+	) -> dict[str, Any]:
 		"""
 		Validate required fields presence and emptiness
-		Returns: (missing_fields, empty_fields)
+		Returns: errors dict with field: message
 		"""
-		missing_fields = [f for f in required_fields if f not in kwargs]
+		errors = {}
 
-		# Fix: Handle whitespace and empty collections
-		empty_fields = {}
 		for field in required_fields:
-			if field in kwargs:
-				value = kwargs[field]
-				# Check for None, empty string, or whitespace-only string
-				if value is None or value == "":
-					empty_fields[field] = "Cannot be empty"
-				elif isinstance(value, str) and value.strip() == "":
-					empty_fields[field] = "Cannot be empty or whitespace"
-				elif isinstance(value, (list, dict)) and len(value) == 0:
-					empty_fields[field] = "Cannot be empty"
+			if field not in kwargs:
+				errors[field] = "Missing required field"
+				continue
 
-		return missing_fields, empty_fields
+			value = kwargs[field]
+			# Check for None, empty string, or whitespace-only string
+			if value is None:
+				errors[field] = "Cannot be null"
+			elif isinstance(value, str) and value.strip() == "":
+				errors[field] = "Cannot be empty or whitespace"
+			elif isinstance(value, (list, dict, set)) and len(value) == 0:
+				errors[field] = "Cannot be empty"
+
+		return errors
 
 	def process_field(self, field: str, value: Any, field_type: type, has_default: bool) -> Any:
 		"""Process and convert a single field value"""
@@ -361,7 +362,7 @@ class RequestValidator:
 	) -> tuple[dict[str, Any], dict[str, str]]:
 		"""
 		Build validated data dictionary with type conversion
-		Returns: (validated_data, conversion_errors)
+		Returns: (validated_data, conversion_errors as dict)
 		"""
 		validated_data = {}
 		conversion_errors = {}
@@ -428,31 +429,28 @@ class RequestValidator:
 			dto_class
 		)
 
-		# Validate required fields
-		missing_fields, empty_fields = self.validate_required_fields(required_fields, kwargs)
+		# Collect all errors into a single dict
+		errors = {}
 
-		# Fix: Better error message with field names and proper status code
-		if missing_fields:
-			raise ValidationException(f"Missing required fields: {', '.join(missing_fields)}")
+		# Validate required fields (now returns dict)
+		required_errors = self.validate_required_fields(required_fields, kwargs)
+		errors.update(required_errors)
 
-		if empty_fields:
-			# Format multiple empty fields into readable message
-			error_msgs = [f"{field}: {msg}" for field, msg in empty_fields.items()]
-			raise ValidationException("<br>".join(error_msgs))
-
-		# Build validated data
+		# Build validated data and add conversion errors
 		validated_data, conversion_errors = self.build_validated_data(
 			required_fields, optional_fields, type_hints, default_values, kwargs
 		)
+		errors.update(conversion_errors)
 
-		if conversion_errors:
-			# Format conversion errors into readable message
-			error_msgs = [f"{field}: {msg}" for field, msg in conversion_errors.items()]
-			raise ValidationException("<br>".join(error_msgs))
+		# If any errors, raise with errors dict
+		if errors:
+			raise ValidationException(
+				message="Validation errors occurred. Please check the details.",
+				errors=errors
+			)
 
 		# Create and return DTO instance
 		return self.create_dto_instance(dto_class, validated_data)
-
 
 # =================================
 # Decorator Factory
@@ -513,9 +511,7 @@ def validate(dto_class: type[BaseRequest]):
 				return func(*args, **kwargs)
 
 			except BaseAPIException:
-				# Custom exceptions sudah set response di __init__, jangan raise lagi
-				# Return None agar frappe pakai response yang sudah di-set
-				return
+				raise
 
 			except (SystemExit, KeyboardInterrupt):
 				raise
