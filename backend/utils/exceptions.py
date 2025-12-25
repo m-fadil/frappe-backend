@@ -1,4 +1,5 @@
 import frappe
+from frappe.utils.data import now_datetime
 
 
 class BaseAPIException(frappe.ValidationError):
@@ -8,10 +9,12 @@ class BaseAPIException(frappe.ValidationError):
 	_title = "Error"
 	_message = "An error occurred"
 
-	def __init__(self, message=None, title=None, errors=None, **kwargs):
+	def __init__(
+		self, message: str | None = None, title: str | None = None, errors: dict | None = None, **kwargs
+	):
 		self.message = message or self._message
 		self.title = title or self._title
-		self.errors = errors or []
+		self.errors = errors or {}
 
 		# Set response langsung ke frappe.local.response
 		frappe.clear_messages()
@@ -19,6 +22,7 @@ class BaseAPIException(frappe.ValidationError):
 		frappe.local.response["title"] = self.title
 		frappe.local.response["detail"] = self.message
 		frappe.local.response["errors"] = self.errors
+		frappe.local.response["time_stamp"] = now_datetime()
 
 		# Tambahkan extra data jika ada
 		for key, value in kwargs.items():
