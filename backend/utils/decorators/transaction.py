@@ -1,5 +1,6 @@
-import frappe
 from functools import wraps
+
+import frappe
 
 
 def with_transaction(func):
@@ -18,4 +19,3 @@ def with_transaction(func):
 			raise
 
 	return wrapper
-

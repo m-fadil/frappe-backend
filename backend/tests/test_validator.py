@@ -1,9 +1,10 @@
 # ./tests/test_validator.py
 
 import json
+
 import frappe
 from frappe.tests import IntegrationTestCase
-from typing import Optional
+
 from backend.utils.decorators.validator import BaseRequest, validate
 
 
@@ -13,10 +14,10 @@ from backend.utils.decorators.validator import BaseRequest, validate
 class CreateUserRequestDTO(BaseRequest):
 	email: str
 	first_name: str
-	last_name: Optional[str] = None
-	age: Optional[int] = None
+	last_name: str | None = None
+	age: int | None = None
 	is_active: bool = True
-	roles: Optional[list] = None
+	roles: list[str] | None = None
 
 
 class UpdateProductRequestDTO(BaseRequest):
@@ -24,12 +25,13 @@ class UpdateProductRequestDTO(BaseRequest):
 	name: str
 	price: float
 	stock: int = 0
-	tags: Optional[list] = []
+	tags: list[str] | None = None
 
 
 # ============================================
 # Sample Functions with @validate
 # ============================================
+
 
 @validate(CreateUserRequestDTO)
 def create_user_handler(body: CreateUserRequestDTO):
@@ -68,20 +70,23 @@ def update_product_handler(body: UpdateProductRequestDTO):
 # Test Cases
 # ============================================
 
+
 class TestValidatorDecorator(IntegrationTestCase):
 	def setUp(self):
 		frappe.request = type("Request", (), {})()
 		frappe.request.data = None
 
 	def test_valid_request_all_fields(self):
-		frappe.request.data = json.dumps({
-			"email": "test@example.com",
-			"first_name": "John",
-			"last_name": "Doe",
-			"age": 30,
-			"is_active": True,
-			"roles": ["admin", "user"],
-		}).encode("utf-8")
+		frappe.request.data = json.dumps(
+			{
+				"email": "test@example.com",
+				"first_name": "John",
+				"last_name": "Doe",
+				"age": 30,
+				"is_active": True,
+				"roles": ["admin", "user"],
+			}
+		).encode("utf-8")
 
 		result = create_user_handler()
 		self.assertEqual(result["email"], "test@example.com")
@@ -92,9 +97,7 @@ class TestValidatorDecorator(IntegrationTestCase):
 		self.assertEqual(result["roles"], ["admin", "user"])
 
 	def test_missing_required_field(self):
-		frappe.request.data = json.dumps({
-			"first_name": "John"
-		}).encode("utf-8")
+		frappe.request.data = json.dumps({"first_name": "John"}).encode("utf-8")
 
 		with self.assertRaises(frappe.ValidationError):
 			create_user_handler()
@@ -106,10 +109,7 @@ class TestValidatorDecorator(IntegrationTestCase):
 		self.assertEqual(errors["email"], "Missing required field")
 
 	def test_empty_required_field(self):
-		frappe.request.data = json.dumps({
-			"email": "",
-			"first_name": "	  "
-		}).encode("utf-8")
+		frappe.request.data = json.dumps({"email": "", "first_name": "	  "}).encode("utf-8")
 
 		with self.assertRaises(frappe.ValidationError):
 			create_user_handler()
@@ -123,11 +123,9 @@ class TestValidatorDecorator(IntegrationTestCase):
 		self.assertEqual(errors["first_name"], "Cannot be empty or whitespace")
 
 	def test_conversion_error(self):
-		frappe.request.data = json.dumps({
-			"email": "test@example.com",
-			"first_name": "John",
-			"age": "not_a_number"
-		}).encode("utf-8")
+		frappe.request.data = json.dumps(
+			{"email": "test@example.com", "first_name": "John", "age": "not_a_number"}
+		).encode("utf-8")
 
 		with self.assertRaises(frappe.ValidationError):
 			create_user_handler()
@@ -135,52 +133,37 @@ class TestValidatorDecorator(IntegrationTestCase):
 		res = frappe.response
 		errors = res["errors"]
 		self.assertIn("age", errors)
-		self.assertEqual(
-		    errors["age"],
-		    "invalid literal for int() with base 10: 'not_a_number'"
-		)
+		self.assertEqual(errors["age"], "invalid literal for int() with base 10: 'not_a_number'")
 
 	def test_handler_runtime_error(self):
-		frappe.request.data = json.dumps({
-			"email": "test@example.com",
-			"first_name": "John"
-		}).encode("utf-8")
+		frappe.request.data = json.dumps({"email": "test@example.com", "first_name": "John"}).encode("utf-8")
 
 		with self.assertRaises(frappe.ValidationError) as ctx:
 			create_user_with_error()
 		self.assertIn("Database connection failed", str(ctx.exception))
 
 	def test_handler_frappe_error(self):
-		frappe.request.data = json.dumps({
-			"email": "test@example.com",
-			"first_name": "John"
-		}).encode("utf-8")
+		frappe.request.data = json.dumps({"email": "test@example.com", "first_name": "John"}).encode("utf-8")
 
 		with self.assertRaises(frappe.ValidationError) as ctx:
 			create_user_with_frappe_error()
 		self.assertIn("User already exists", str(ctx.exception))
 
 	def test_update_product_handler_defaults(self):
-		frappe.request.data = json.dumps({
-			"product_id": 1,
-			"name": "Laptop",
-			"price": 999.99
-		}).encode("utf-8")
+		frappe.request.data = json.dumps({"product_id": 1, "name": "Laptop", "price": 999.99}).encode("utf-8")
 
 		result = update_product_handler()
 		self.assertEqual(result["product_id"], 1)
 		self.assertEqual(result["name"], "Laptop")
 		self.assertEqual(result["price"], 999.99)
-		self.assertEqual(result["stock"], 0)   # default applied
-		self.assertEqual(result["tags"], [])   # default applied
+		self.assertEqual(result["stock"], 0)  # default applied
+		self.assertEqual(result["tags"], [])  # default applied
 
 	def test_parse_request_data_from_frappe_request(self):
 		# Simulate raw JSON in frappe.request.data
-		frappe.request.data = json.dumps({
-			"email": "raw@example.com",
-			"first_name": "Raw",
-			"age": "25"
-		}).encode("utf-8")
+		frappe.request.data = json.dumps(
+			{"email": "raw@example.com", "first_name": "Raw", "age": "25"}
+		).encode("utf-8")
 
 		result = create_user_handler()
 		self.assertEqual(result["email"], "raw@example.com")
